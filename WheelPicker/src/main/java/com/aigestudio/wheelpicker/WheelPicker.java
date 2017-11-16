@@ -284,6 +284,11 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
      */
     private String fontPath;
 
+    private boolean mMarquee;
+    private boolean isMarqueeActive;
+    private boolean forceStopMarquee;
+    private int marqueeX = 0;
+
     private boolean isDebug;
 
     public WheelPicker(Context context) {
@@ -321,6 +326,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         isCurved = a.getBoolean(R.styleable.WheelPicker_wheel_curved, false);
         mItemAlign = a.getInt(R.styleable.WheelPicker_wheel_item_align, ALIGN_CENTER);
         fontPath = a.getString(R.styleable.WheelPicker_wheel_font_path);
+        mMarquee = a.getBoolean(R.styleable.WheelPicker_wheel_selected_item_text_marquee, true);
         a.recycle();
 
         // 可见数据项改变后更新与之相关的参数
@@ -614,6 +620,12 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
             // 根据卷曲与否计算数据项绘制Y方向中心坐标
             // Correct item's drawn centerY base on curved state
             int drawnCenterY = isCurved ? mDrawnCenterY - distanceToCenter : mDrawnItemCenterY;
+            int drawnCenterX = mDrawnCenterX;
+            if (mMarquee && isMarqueeActive && !forceStopMarquee && drawnOffsetPos == 0) {
+                //if (isDebug)
+                //    Log.i(TAG, "draw with marquee offset: " + marqueeX);
+                drawnCenterX += marqueeX;
+            }
 
             // 判断是否需要为当前数据项绘制不同颜色
             // Judges need to draw different color for current item or not
@@ -621,20 +633,20 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                 canvas.save();
                 if (isCurved) canvas.concat(mMatrixRotate);
                 canvas.clipRect(mRectCurrentItem, Region.Op.DIFFERENCE);
-                canvas.drawText(data, mDrawnCenterX, drawnCenterY, mPaint);
+                canvas.drawText(data, drawnCenterX, drawnCenterY, mPaint);
                 canvas.restore();
 
                 mPaint.setColor(mSelectedItemTextColor);
                 canvas.save();
                 if (isCurved) canvas.concat(mMatrixRotate);
                 canvas.clipRect(mRectCurrentItem);
-                canvas.drawText(data, mDrawnCenterX, drawnCenterY, mPaint);
+                canvas.drawText(data, drawnCenterX, drawnCenterY, mPaint);
                 canvas.restore();
             } else {
                 canvas.save();
                 canvas.clipRect(mRectDrawn);
                 if (isCurved) canvas.concat(mMatrixRotate);
-                canvas.drawText(data, mDrawnCenterX, drawnCenterY, mPaint);
+                canvas.drawText(data, drawnCenterX, drawnCenterY, mPaint);
                 canvas.restore();
             }
             if (isDebug) {
@@ -690,6 +702,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        Log.i(TAG, "onTouchEvent: " +event.getAction());
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 isTouchTriggered = true;
@@ -705,6 +718,10 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                     isForceFinishScroll = true;
                 }
                 mDownPointY = mLastPointY = (int) event.getY();
+                if (mMarquee && isMarqueeActive) {
+                    forceStopMarquee = true;
+                    marqueeX = 0;
+                }
                 break;
             case MotionEvent.ACTION_MOVE:
                 if (Math.abs(mDownPointY - event.getY()) < mTouchSlop) {
@@ -727,6 +744,8 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
             case MotionEvent.ACTION_UP:
                 if (null != getParent())
                     getParent().requestDisallowInterceptTouchEvent(false);
+
+                forceStopMarquee = false;
                 if (isClick && !isForceFinishScroll) break;
                 mTracker.addMovement(event);
 
@@ -754,6 +773,8 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                         mScroller.setFinalY(mMaxFlingY);
                     else if (mScroller.getFinalY() < mMinFlingY)
                         mScroller.setFinalY(mMinFlingY);
+
+                mHandler.removeCallbacks(this);
                 mHandler.post(this);
                 if (null != mTracker) {
                     mTracker.recycle();
@@ -767,6 +788,7 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
                     mTracker.recycle();
                     mTracker = null;
                 }
+                //forceStopMarquee = false;
                 break;
         }
         return true;
@@ -782,27 +804,66 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
             return -remainder;
     }
 
+    private void invokeListeners(int position) {
+        if (isDebug)
+            Log.i(TAG, position+" invokeListeners");
+        if (null != mOnItemSelectedListener && isTouchTriggered)
+            mOnItemSelectedListener.onItemSelected(this, mData.get(position), position);
+        if (null != mOnWheelChangeListener && isTouchTriggered) {
+            mOnWheelChangeListener.onWheelSelected(position);
+            mOnWheelChangeListener.onWheelScrollStateChanged(SCROLL_STATE_IDLE);
+        }
+    }
+
     @Override
     public void run() {
         if (null == mData || mData.size() == 0) return;
         if (mScroller.isFinished() && !isForceFinishScroll) {
             if (mItemHeight == 0) return;
-            int position = (-mScrollOffsetY / mItemHeight + mSelectedItemPosition) % mData.size();
+            int position = (Math.round(-mScrollOffsetY / mItemHeight) + mSelectedItemPosition) % mData.size();
             position = position < 0 ? position + mData.size() : position;
-            if (isDebug)
-                Log.i(TAG, position + ":" + mData.get(position) + ":" + mScrollOffsetY);
+            //if (isDebug)
+            //    Log.i(TAG, position + ":" + mData.get(position) + ":" + mScrollOffsetY);
             mCurrentItemPosition = position;
-            if (null != mOnItemSelectedListener && isTouchTriggered)
-                mOnItemSelectedListener.onItemSelected(this, mData.get(position), position);
-            if (null != mOnWheelChangeListener && isTouchTriggered) {
-                mOnWheelChangeListener.onWheelSelected(position);
-                mOnWheelChangeListener.onWheelScrollStateChanged(SCROLL_STATE_IDLE);
+
+            if (mMarquee) {
+                if (mPaint.measureText(String.valueOf(mData.get(position))) > mRectDrawn.width()) {
+                    if (!isMarqueeActive) {
+                        isMarqueeActive = true;
+                        marqueeX = 0;
+                        invokeListeners(position);
+                        if (isDebug)
+                            Log.i(TAG, "startMarquee");
+                    }
+                    marqueeX -= 3;
+                    if (marqueeX < -mRectDrawn.width()) {
+                        marqueeX = mRectDrawn.width();
+                    }
+
+                    postInvalidate();
+                    mHandler.postDelayed(this, 16);
+                } else {
+                    if (isDebug) {
+                        Log.i(TAG, "isMarqueeActive " + isMarqueeActive);
+                    }
+                    isMarqueeActive = false;
+                    marqueeX = 0;
+                    invokeListeners(position);
+                }
+            } else {
+                invokeListeners(position);
             }
         }
         if (mScroller.computeScrollOffset()) {
             if (null != mOnWheelChangeListener)
                 mOnWheelChangeListener.onWheelScrollStateChanged(SCROLL_STATE_SCROLLING);
             mScrollOffsetY = mScroller.getCurrY();
+            if (mMarquee && isMarqueeActive) {
+                if (isDebug)
+                    Log.i(TAG, "stopMarquee");
+                isMarqueeActive = false;
+                marqueeX = 0;
+            }
             postInvalidate();
             mHandler.postDelayed(this, 16);
         }
@@ -1112,6 +1173,11 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         computeTextSize();
         requestLayout();
         invalidate();
+    }
+
+    @Override
+    public void setSelectedItemMarquee(boolean marquee) {
+        mMarquee = marquee;
     }
 
     /**

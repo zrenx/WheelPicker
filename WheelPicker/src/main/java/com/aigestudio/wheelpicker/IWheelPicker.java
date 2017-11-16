@@ -524,4 +524,6 @@ public interface IWheelPicker {
      * @param tf 字体对象
      */
     void setTypeface(Typeface tf);
+
+    void setSelectedItemMarquee(boolean marquee);
 }

@@ -34,6 +34,8 @@ public class WheelDatePicker extends LinearLayout implements WheelPicker.OnItemS
 
     private int mYear, mMonth, mDay;
 
+    private boolean mMarquee;
+
     public WheelDatePicker(Context context) {
         this(context, null);
     }
@@ -400,6 +402,11 @@ public class WheelDatePicker extends LinearLayout implements WheelPicker.OnItemS
         mPickerYear.setTypeface(tf);
         mPickerMonth.setTypeface(tf);
         mPickerDay.setTypeface(tf);
+    }
+
+    @Override
+    public void setSelectedItemMarquee(boolean marquee) {
+        mMarquee = marquee;
     }
 
     @Override
