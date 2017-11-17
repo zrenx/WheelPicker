@@ -702,7 +702,8 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        Log.i(TAG, "onTouchEvent: " +event.getAction());
+        if (isDebug)
+            Log.i(TAG, "onTouchEvent: " +event.getAction());
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 isTouchTriggered = true;
@@ -1180,6 +1181,25 @@ public class WheelPicker extends View implements IDebug, IWheelPicker, Runnable 
         mMarquee = marquee;
     }
 
+    @Override
+    public void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (isDebug)
+            Log.i(TAG, "onWindowVisibilityChanged: " + visibility);
+        if (mMarquee) {
+            if (isMarqueeActive) {
+                if (visibility != VISIBLE) {
+                    isMarqueeActive = false;
+                    marqueeX = 0;
+                    mHandler.removeCallbacks(this);
+                }
+            } else {
+                if (visibility == VISIBLE) {
+                    mHandler.post(this);
+                }
+            }
+        }
+    }
     /**
      * 滚轮选择器Item项被选中时监听接口
      *
